@@ -1,0 +1,913 @@
+local Players = game:GetService("Players");
+local UserInputService = game:GetService("UserInputService");
+local TweenService = game:GetService("TweenService");
+local CoreGui = game:GetService("CoreGui");
+local player = Players.LocalPlayer;
+local ALT_TOGGLE = Enum.KeyCode.KeypadSeven;
+local isOpen = false;
+local RunService = game:GetService("RunService");
+local ESP_KEY = Enum.KeyCode.P;
+local espEnabled = false;
+local showDistance = false;
+local showHealth = false;
+local espObjects = {};
+local espColor = Color3.fromRGB(0, 255, 100);
+local espTextSize = 10;
+local isBindingESP = false;
+local noclipEnabled = false;
+local noclipConnection = nil;
+local infJumpEnabled = false;
+local jumpConnection = nil;
+local fullBrightEnabled = false;
+local oldAmbient = game:GetService("Lighting").Ambient;
+local oldOutdoorAmbient = game:GetService("Lighting").OutdoorAmbient;
+local toggling = false;
+local SKULL_DATA = "          .                                                      .\n" .. "        .n                   .                 .                  n.\n" .. "  .   .dP                  dP                   9b                 9b.    .\n" .. " 4    qXb         .       dX                     Xb       .        dXp     t\n" .. " dX.    9Xb      .dXb    __                         __    dXb.     dXP     .Xb\n" .. " 9XXb._       _.dXXXXb dXXXXbo.                 .odXXXXb dXXXXb._       _.dXXP\n" .. " 9XXXXXXXXXXXXXXXXXXXVXXXXXXXXOo.           .oOXXXXXXXXVXXXXXXXXXXXXXXXXXXXP\n" .. "  `9XXXXXXXXXXXXXXXXXXXXX'~   ~`OOO8b   d8OOO'~   ~`XXXXXXXXXXXXXXXXXXXXXP'\n" .. "    `9XXXXXXXXXXXP' `9XX'   DIE    `98v8P'  HUMAN   `XXP' `9XXXXXXXXXXXP'\n" .. "        ~~~~~~~       9X.          .db|db.          .XP       ~~~~~~~\n" .. "                        )b.  .dbo.dP'`v'`9b.odb.  .dX(\n" .. "                      ,dXXXXXXXXXXXb     dXXXXXXXXXXXb.\n" .. "                     dXXXXXXXXXXXP'   .   `9XXXXXXXXXXXb\n" .. "                    dXXXXXXXXXXXXb   d|b   dXXXXXXXXXXXXb\n" .. "                    9XXb'   `XXXXXb.dX|Xb.dXXXXX'   `dXXP\n" .. "                     `'      9XXXXXX(   )XXXXXXP      `'\n" .. "                              XXXX X.`v'.X XXXX\n" .. "                              XP^X'`b   d'`X^XX\n" .. "                              X. 9  `   '  P )X\n" .. "                              `b  `       '  d'\n" .. "                               `             '";
+local SOUNDS = {IntroAmbience="rbxassetid://90305812327722",Static="rbxassetid://140043289814504",Toggle="rbxassetid://80099403859001",AimbotHub="rbxassetid://110205432201626",IntroExtra="rbxassetid://18379039436",Lagging="rbxassetid://91797564915224"};
+if CoreGui:FindFirstChild("ZokaLite") then
+	CoreGui.ZokaLite:Destroy();
+end
+local screenGui = Instance.new("ScreenGui");
+screenGui.Name = "ZokaLite";
+screenGui.Parent = CoreGui;
+screenGui.IgnoreGuiInset = true;
+screenGui.DisplayOrder = 999;
+local function playSound(id, vol, speed)
+	local s = Instance.new("Sound");
+	s.SoundId = id;
+	s.Volume = vol or 0.5;
+	s.PlaybackSpeed = speed or 1;
+	s.Parent = screenGui;
+	s:Play();
+	s.Ended:Connect(function()
+		s:Destroy();
+	end);
+	task.delay(30, function()
+		if (s and s.Parent) then
+			s:Destroy();
+		end
+	end);
+end
+local function createESP(targetPlayer)
+	if (targetPlayer == player) then
+		return;
+	end
+	local folder = Instance.new("Folder", screenGui);
+	folder.Name = "ESP_" .. targetPlayer.Name;
+	local label = Instance.new("TextLabel", folder);
+	label.Name = "Name";
+	label.Visible = false;
+	label.BackgroundTransparency = 1;
+	label.AnchorPoint = Vector2.new(0.5, 0.5);
+	label.Font = Enum.Font.Code;
+	label.TextColor3 = espColor;
+	local stroke = Instance.new("UIStroke", label);
+	stroke.Thickness = 1;
+	stroke.Color = Color3.new(0, 0, 0);
+	espObjects[targetPlayer] = {Folder=folder,Label=label};
+end
+local function updateESPStatus(state)
+	espEnabled = state;
+	playSound(SOUNDS.Static, 0.5, (espEnabled and 1.2) or 0.8);
+	task.spawn(function()
+		for i = 1, 8 do
+			fullScreenGlitch();
+			task.wait(0.02);
+		end
+	end);
+	if not espEnabled then
+		for targetPlayer, data in pairs(espObjects) do
+			if data.Label then
+				data.Label.Visible = false;
+			end
+			local char = targetPlayer.Character;
+			if (char and char:FindFirstChild("ZokaBodyHighlight")) then
+				char.ZokaBodyHighlight.Enabled = false;
+			end
+		end
+	end
+end
+RunService.RenderStepped:Connect(function()
+	if not espEnabled then
+		return;
+	end
+	local cam = workspace.CurrentCamera;
+	local myChar = player.Character;
+	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart");
+	for targetPlayer, data in pairs(espObjects) do
+		local char = targetPlayer.Character;
+		local hrp = char and char:FindFirstChild("HumanoidRootPart");
+		local hum = char and char:FindFirstChild("Humanoid");
+		if (hrp and hum and (hum.Health > 0)) then
+			local pos, onScreen = cam:WorldToViewportPoint(hrp.Position);
+			if onScreen then
+				local bodyH = char:FindFirstChild("ZokaBodyHighlight") or Instance.new("Highlight", char);
+				bodyH.Name = "ZokaBodyHighlight";
+				bodyH.FillColor = espColor;
+				bodyH.OutlineColor = Color3.new(1, 1, 1);
+				bodyH.FillTransparency = 0.5;
+				bodyH.Enabled = true;
+				local displayText = targetPlayer.Name;
+				if showHealth then
+					displayText = displayText .. "\nHP: " .. math.floor(hum.Health);
+				end
+				if (showDistance and myRoot) then
+					local dist = math.floor((myRoot.Position - hrp.Position).Magnitude);
+					displayText = displayText .. "\n[" .. dist .. "m]";
+				end
+				data.Label.Text = displayText;
+				data.Label.TextColor3 = espColor;
+				data.Label.TextSize = espTextSize;
+				data.Label.Position = UDim2.new(0, pos.X, 0, pos.Y - 60);
+				data.Label.Visible = true;
+			else
+				data.Label.Visible = false;
+			end
+		else
+			data.Label.Visible = false;
+		end
+	end
+end);
+Players.PlayerAdded:Connect(createESP);
+for _, p in pairs(Players:GetPlayers()) do
+	createESP(p);
+end
+local watermark = Instance.new("Frame", screenGui);
+watermark.Name = "WatermarkFrame";
+watermark.Size = UDim2.new(0, 450, 0, 40);
+watermark.Position = UDim2.new(1, -460, 0, 15);
+watermark.BackgroundTransparency = 1;
+local closeWm = Instance.new("TextButton", watermark);
+closeWm.Size = UDim2.new(0, 20, 0, 20);
+closeWm.Position = UDim2.new(0, 0, 0.5, -10);
+closeWm.BackgroundTransparency = 1;
+closeWm.Text = "[x]";
+closeWm.Font = Enum.Font.Code;
+closeWm.TextColor3 = Color3.fromRGB(150, 150, 150);
+closeWm.TextTransparency = 0.5;
+closeWm.TextSize = 14;
+closeWm.MouseButton1Click:Connect(function()
+	watermark:Destroy();
+end);
+local logoContainer = Instance.new("Frame", watermark);
+logoContainer.Size = UDim2.new(0, 110, 0, 30);
+logoContainer.Position = UDim2.new(0, 30, 0.5, -15);
+logoContainer.BackgroundTransparency = 1;
+logoContainer.ClipsDescendants = false;
+local wmLogo = Instance.new("TextLabel", logoContainer);
+wmLogo.Size = UDim2.new(1, 0, 1, 0);
+wmLogo.BackgroundTransparency = 1;
+wmLogo.TextColor3 = Color3.fromRGB(0, 255, 100);
+wmLogo.Font = Enum.Font.Code;
+wmLogo.TextSize = 5;
+wmLogo.LineHeight = 0.7;
+wmLogo.TextWrapped = false;
+wmLogo.TextXAlignment = Enum.TextXAlignment.Left;
+wmLogo.Text = [[
+███████╗ ██████╗ ██╗  ██╗ █████╗ 
+╚══███╔╝██╔═══██╗██║ ██╔╝██╔══██╗
+  ███╔╝ ██║   ██║█████╔╝ ███████║
+ ███╔╝  ██║   ██║██╔═██╗ ██╔══██╗
+███████╗╚██████╔╝██║  ██╗██║  ██╗]];
+local wmQuote = Instance.new("TextLabel", watermark);
+wmQuote.Size = UDim2.new(0, 250, 0, 30);
+wmQuote.Position = UDim2.new(0, 150, 0.5, -15);
+wmQuote.Text = "| NOTHING IS IMPOSSIBLE";
+wmQuote.TextColor3 = Color3.fromRGB(255, 255, 255);
+wmQuote.TextSize = 12;
+wmQuote.Font = Enum.Font.Code;
+wmQuote.BackgroundTransparency = 1;
+wmQuote.TextXAlignment = Enum.TextXAlignment.Left;
+local maxGlitchLines = 5;
+local currentGlitchLines = 0;
+local glitchDebounce = false;
+local function fullScreenGlitch(customColor)
+	if (currentGlitchLines >= maxGlitchLines) then
+		return;
+	end
+	local parent = game:GetService("CoreGui"):FindFirstChild("ZokaLite") or screenGui;
+	if not parent then
+		return;
+	end
+	currentGlitchLines = currentGlitchLines + 1;
+	local line = Instance.new("Frame");
+	line.Name = "ZokaGlitchLine";
+	line.Parent = parent;
+	local baseColor = customColor or Color3.fromRGB(0, 255, 100);
+	line.BackgroundColor3 = ((math.random() > 0.5) and baseColor) or Color3.fromRGB(255, 255, 255);
+	line.BorderSizePixel = 0;
+	line.BackgroundTransparency = 0.4;
+	line.Size = UDim2.new(1, 0, 0, math.random(1, 4));
+	line.Position = UDim2.new(0, 0, math.random(5, 95) / 100, 0);
+	line.ZIndex = 2000000;
+	task.delay(0.03, function()
+		if (line and line.Parent) then
+			line:Destroy();
+		end
+		currentGlitchLines = currentGlitchLines - 1;
+	end);
+end
+local function activationEffect()
+	if glitchDebounce then
+		return;
+	end
+	glitchDebounce = true;
+	playSound(SOUNDS.Static, 0.6, 1.2);
+	for i = 1, 2 do
+		fullScreenGlitch();
+		task.wait(0.05);
+	end
+	task.delay(0.2, function()
+		glitchDebounce = false;
+	end);
+end
+local mainFrame = Instance.new("Frame", screenGui);
+mainFrame.Name = "MainFrame";
+mainFrame.Size = UDim2.new(0, 550, 0, 350);
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0);
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5);
+mainFrame.BackgroundColor3 = Color3.fromRGB(5, 5, 5);
+mainFrame.Visible = false;
+mainFrame.ZIndex = 5;
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 4);
+local stroke = Instance.new("UIStroke", mainFrame);
+stroke.Color = Color3.fromRGB(0, 255, 100);
+stroke.Thickness = 1.2;
+local header = Instance.new("Frame", mainFrame);
+header.Size = UDim2.new(0, 250, 0, 60);
+header.Position = UDim2.new(0, 15, 0, 10);
+header.BackgroundTransparency = 1;
+header.ZIndex = 6;
+local instructions = Instance.new("TextLabel", mainFrame);
+instructions.Name = "Instructions";
+instructions.Size = UDim2.new(0, 250, 0, 25);
+instructions.Position = UDim2.new(1, -265, 0, 10);
+instructions.Text = "Press [ NumPadSeven ] to hide/show the GUI";
+instructions.TextColor3 = Color3.fromRGB(80, 80, 80);
+instructions.Font = Enum.Font.Code;
+instructions.TextSize = 12;
+instructions.TextXAlignment = Enum.TextXAlignment.Right;
+instructions.BackgroundTransparency = 1;
+instructions.ZIndex = 7;
+local discordBtn = Instance.new("TextButton", mainFrame);
+discordBtn.Name = "DiscordLink";
+discordBtn.Size = UDim2.new(0, 300, 0, 30);
+discordBtn.Position = UDim2.new(1, -315, 0, 35);
+discordBtn.BackgroundTransparency = 1;
+discordBtn.Text = "discord.gg/zoka";
+discordBtn.TextColor3 = Color3.fromRGB(255, 255, 255);
+discordBtn.Font = Enum.Font.Arcade;
+discordBtn.TextSize = 18;
+discordBtn.TextXAlignment = Enum.TextXAlignment.Right;
+discordBtn.ZIndex = 7;
+local glow = Instance.new("UIStroke", discordBtn);
+glow.Color = Color3.fromRGB(191, 0, 255);
+glow.Thickness = 1.5;
+glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual;
+discordBtn.MouseButton1Click:Connect(function()
+	if setclipboard then
+		playSound("rbxassetid://1556792072", 0.8, 1);
+		setclipboard("https://discord.gg/votre-lien");
+		discordBtn.Text = "COPIED!";
+		glow.Color = Color3.fromRGB(0, 255, 100);
+		task.wait(2);
+		discordBtn.Text = "discord.gg/zoka";
+		glow.Color = Color3.fromRGB(191, 0, 255);
+	end
+end);
+local osTitle = Instance.new("TextLabel", header);
+osTitle.Size = UDim2.new(1, 0, 0, 25);
+osTitle.Text = "ZOKA_OS_V1";
+osTitle.TextColor3 = Color3.fromRGB(0, 255, 100);
+osTitle.Font = Enum.Font.Code;
+osTitle.TextSize = 22;
+osTitle.TextXAlignment = Enum.TextXAlignment.Left;
+osTitle.BackgroundTransparency = 1;
+osTitle.ZIndex = 7;
+local gameTitle = Instance.new("TextLabel", header);
+gameTitle.Size = UDim2.new(1, 0, 0, 20);
+gameTitle.Position = UDim2.new(0, 0, 0, 25);
+gameTitle.Text = "> HARLEM_HUB";
+gameTitle.TextColor3 = Color3.fromRGB(255, 255, 255);
+gameTitle.Font = Enum.Font.Code;
+gameTitle.TextSize = 16;
+gameTitle.TextXAlignment = Enum.TextXAlignment.Left;
+gameTitle.BackgroundTransparency = 1;
+gameTitle.ZIndex = 7;
+local internalLogo = Instance.new("TextLabel", mainFrame);
+internalLogo.Size = UDim2.new(0, 120, 0, 40);
+internalLogo.Position = UDim2.new(1, -130, 1, -45);
+internalLogo.BackgroundTransparency = 1;
+internalLogo.TextColor3 = Color3.fromRGB(0, 255, 100);
+internalLogo.TextTransparency = 0.5;
+internalLogo.Font = Enum.Font.Code;
+internalLogo.TextSize = 5;
+internalLogo.LineHeight = 0.7;
+internalLogo.TextXAlignment = Enum.TextXAlignment.Right;
+internalLogo.ZIndex = 6;
+internalLogo.Text = [[
+███████╗ ██████╗ ██╗  ██╗ █████╗ 
+╚══███╔╝██╔═══██╗██║ ██╔╝██╔══██╗
+  ███╔╝ ██║   ██║█████╔╝ ███████║
+ ███╔╝  ██║   ██║██╔═██╗ ██╔══██╗
+███████╗╚██████╔╝██║  ██╗██║  ██╗]];
+local sepLine = Instance.new("Frame", mainFrame);
+sepLine.Size = UDim2.new(1, -30, 0, 1);
+sepLine.Position = UDim2.new(0, 15, 0, 70);
+sepLine.BackgroundColor3 = Color3.fromRGB(0, 255, 100);
+sepLine.BackgroundTransparency = 0.5;
+sepLine.BorderSizePixel = 0;
+sepLine.ZIndex = 6;
+local container = Instance.new("ScrollingFrame", mainFrame);
+container.Name = "ButtonContainer";
+container.Size = UDim2.new(1, -30, 1, -110);
+container.Position = UDim2.new(0, 15, 0, 85);
+container.BackgroundTransparency = 1;
+container.BorderSizePixel = 0;
+container.ZIndex = 6;
+container.ScrollBarThickness = 2;
+container.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 100);
+container.ScrollBarImageTransparency = 0.5;
+container.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar;
+container.CanvasSize = UDim2.new(0, 0, 0, 0);
+local listLayout = Instance.new("UIListLayout", container);
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder;
+listLayout.Padding = UDim.new(0, 10);
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	container.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20);
+end);
+local function createCategory(name)
+	local catLabel = Instance.new("TextLabel", container);
+	catLabel.Name = "Category_" .. name;
+	catLabel.Size = UDim2.new(1, 0, 0, 25);
+	catLabel.BackgroundTransparency = 1;
+	catLabel.Text = "--- [ " .. name:upper() .. " ] ---";
+	catLabel.TextColor3 = Color3.fromRGB(0, 255, 100);
+	catLabel.Font = Enum.Font.Code;
+	catLabel.TextSize = 14;
+	catLabel.ZIndex = 7;
+	local buttonGridFrame = Instance.new("Frame", container);
+	buttonGridFrame.Name = name .. "_Grid";
+	buttonGridFrame.BackgroundTransparency = 1;
+	buttonGridFrame.Size = UDim2.new(1, 0, 0, 0);
+	local grid = Instance.new("UIGridLayout", buttonGridFrame);
+	grid.CellSize = UDim2.new(0, 160, 0, 35);
+	grid.CellPadding = UDim2.new(0, 10, 0, 10);
+	grid.SortOrder = Enum.SortOrder.LayoutOrder;
+	grid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		buttonGridFrame.Size = UDim2.new(1, 0, 0, grid.AbsoluteContentSize.Y);
+	end);
+	return buttonGridFrame;
+end
+local function createButton(name, parentGrid, callback)
+	local btn = Instance.new("TextButton", parentGrid);
+	btn.Name = name .. "Btn";
+	btn.BackgroundColor3 = Color3.fromRGB(15, 15, 15);
+	btn.TextColor3 = Color3.fromRGB(0, 255, 100);
+	btn.Text = "[ ] " .. name;
+	btn.Font = Enum.Font.Code;
+	btn.TextSize = 14;
+	btn.BorderSizePixel = 0;
+	btn.ZIndex = 7;
+	local bStroke = Instance.new("UIStroke", btn);
+	bStroke.Color = Color3.fromRGB(0, 255, 100);
+	bStroke.Thickness = 1;
+	bStroke.Transparency = 0.6;
+	local enabled = false;
+	btn.MouseButton1Click:Connect(function()
+		enabled = not enabled;
+		if enabled then
+			btn.TextColor3 = Color3.fromRGB(255, 255, 255);
+			btn.BackgroundColor3 = Color3.fromRGB(0, 100, 40);
+			btn.Text = "[X] " .. name;
+			playSound(SOUNDS.Toggle, 0.5, 1.2);
+		else
+			btn.TextColor3 = Color3.fromRGB(0, 255, 100);
+			btn.BackgroundColor3 = Color3.fromRGB(15, 15, 15);
+			btn.Text = "[ ] " .. name;
+			playSound(SOUNDS.Static, 0.5, 0.8);
+		end
+		callback(enabled);
+		if name:find("SIZE") then
+			btn.Text = "[ ] FONT SIZE: " .. espTextSize;
+		elseif name:find("BIND") then
+			if isBindingESP then
+				btn.Text = "[ ] PRESS ANY KEY";
+			else
+				btn.Text = "[ ] BIND: " .. ESP_KEY.Name;
+			end
+		end
+	end);
+	return btn;
+end
+local playerGrid = createCategory("PLAYER");
+local walkSpeedActive = false;
+local customSpeedValue = 16;
+createButton("", playerGrid, function()
+end);
+local speedContainer = playerGrid:GetChildren()[#playerGrid:GetChildren()];
+for _, v in pairs(speedContainer:GetChildren()) do
+	if (v:IsA("TextLabel") or v:IsA("TextButton")) then
+		v.Visible = false;
+	end
+end
+local speedLabel = Instance.new("TextLabel", speedContainer);
+speedLabel.Size = UDim2.new(0.4, 0, 1, 0);
+speedLabel.Position = UDim2.new(0.05, 0, 0, 0);
+speedLabel.BackgroundTransparency = 1;
+speedLabel.Text = "SPEED:";
+speedLabel.TextColor3 = Color3.fromRGB(200, 200, 200);
+speedLabel.Font = Enum.Font.Code;
+speedLabel.TextSize = 14;
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left;
+speedLabel.ZIndex = 10;
+local speedInput = Instance.new("TextBox", speedContainer);
+speedInput.Size = UDim2.new(0.45, 0, 0.7, 0);
+speedInput.Position = UDim2.new(0.5, 0, 0.15, 0);
+speedInput.BackgroundColor3 = Color3.fromRGB(30, 30, 30);
+speedInput.TextColor3 = Color3.fromRGB(0, 255, 100);
+speedInput.Font = Enum.Font.Code;
+speedInput.TextSize = 14;
+speedInput.Text = "16";
+speedInput.BorderSizePixel = 0;
+speedInput.ZIndex = 11;
+local corner = Instance.new("UICorner", speedInput);
+corner.CornerRadius = UDim.new(0, 4);
+speedInput:GetPropertyChangedSignal("Text"):Connect(function()
+	local cleanText = speedInput.Text:gsub("%D+", "");
+	speedInput.Text = cleanText;
+	customSpeedValue = tonumber(cleanText) or 16;
+end);
+createButton("ACTIVATE SPEED", playerGrid, function(state)
+	walkSpeedActive = state;
+	task.spawn(function()
+		while walkSpeedActive do
+			local hum = player.Character and player.Character:FindFirstChild("Humanoid");
+			if hum then
+				hum.WalkSpeed = customSpeedValue;
+			end
+			task.wait(0.1);
+		end
+		local hum = player.Character and player.Character:FindFirstChild("Humanoid");
+		if hum then
+			hum.WalkSpeed = 16;
+		end
+	end);
+end);
+local autoFarmGrid = createCategory("AUTOFARM");
+local autoLootRunning = false;
+createButton("AUTO LOOT TRASH", autoFarmGrid, function(state)
+	autoLootRunning = state;
+	local targetPos = Vector3.new(-142.07650756835938, 10.118797302246094, -34.004337310791016);
+	local lootPath = workspace:FindFirstChild("Loot");
+	local dumpster = lootPath and lootPath:FindFirstChild("Dumpster3");
+	local cont = dumpster and dumpster:FindFirstChild("Cont");
+	local prompt = cont and cont:FindFirstChild("ProximityPrompt");
+	if state then
+		if (player.Character and player.Character:FindFirstChild("HumanoidRootPart")) then
+			player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPos);
+		end
+		task.spawn(function()
+			while autoLootRunning do
+				if prompt then
+					prompt.HoldDuration = 0;
+					for i = 1, 3 do
+						if not autoLootRunning then
+							break;
+						end
+						fireproximityprompt(prompt);
+						task.wait(1);
+					end
+				end
+				task.wait(118);
+			end
+		end);
+	elseif prompt then
+		prompt.HoldDuration = 1;
+	end
+end);
+local autoCleaning = false;
+createButton("AUTO CLEAN DELI", autoFarmGrid, function(state)
+	autoCleaning = state;
+	if state then
+		task.spawn(function()
+			if (player.Character and player.Character:FindFirstChild("HumanoidRootPart")) then
+				player.Character.HumanoidRootPart.CFrame = CFrame.new(-559.367, 8.102, -90.45);
+				task.wait(0.5);
+				local tcs = game:GetService("TextChatService");
+				if (tcs.ChatVersion == Enum.ChatVersion.TextChatService) then
+					tcs.TextChannels.RBXGeneral:SendAsync("/applyjob");
+				else
+					game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer("/applyjob", "All");
+				end
+				task.wait(1);
+				player.Character.HumanoidRootPart.CFrame = CFrame.new(-556.981, 9.496, -85.429);
+				task.wait(0.5);
+			end
+			while autoCleaning do
+				local cleaningJob = workspace:FindFirstChild("JobSystem") and workspace.JobSystem:FindFirstChild("CleaningJob2");
+				if cleaningJob then
+					for _, spot in pairs(cleaningJob:GetChildren()) do
+						if not autoCleaning then
+							break;
+						end
+						if (spot.Name == "CleaningSpot") then
+							local prompt = spot:FindFirstChildWhichIsA("ProximityPrompt");
+							if prompt then
+								prompt.HoldDuration = 0;
+								prompt.Enabled = true;
+								prompt.RequiresLineOfSight = false;
+								task.spawn(function()
+									pcall(function()
+										fireproximityprompt(prompt);
+									end);
+								end);
+							end
+						end
+					end
+				end
+				task.wait(0.3);
+			end
+		end);
+	else
+		local cleaningJob = workspace:FindFirstChild("JobSystem") and workspace.JobSystem:FindFirstChild("CleaningJob2");
+		if cleaningJob then
+			for _, spot in pairs(cleaningJob:GetChildren()) do
+				local prompt = spot:FindFirstChildWhichIsA("ProximityPrompt");
+				if prompt then
+					prompt.HoldDuration = 5.5;
+				end
+			end
+		end
+	end
+end);
+local autoChicken = false;
+createButton("AUTO CLEAN CHICKEN", autoFarmGrid, function(state)
+	autoChicken = state;
+	if state then
+		task.spawn(function()
+			if (player.Character and player.Character:FindFirstChild("HumanoidRootPart")) then
+				player.Character.HumanoidRootPart.CFrame = CFrame.new(-176.825, 4.163, 143.761);
+				task.wait(0.5);
+				local tcs = game:GetService("TextChatService");
+				if (tcs.ChatVersion == Enum.ChatVersion.TextChatService) then
+					tcs.TextChannels.RBXGeneral:SendAsync("/applyjob");
+				else
+					game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer("/applyjob", "All");
+				end
+				task.wait(1);
+				player.Character.HumanoidRootPart.CFrame = CFrame.new(-192.014, 4.163, 132.605);
+				task.wait(0.5);
+			end
+			while autoChicken do
+				local cleaningJob = workspace:FindFirstChild("JobSystem") and workspace.JobSystem:FindFirstChild("CleaningJob4");
+				if cleaningJob then
+					for _, spot in pairs(cleaningJob:GetChildren()) do
+						if not autoChicken then
+							break;
+						end
+						if (spot.Name == "CleaningSpot") then
+							local prompt = spot:FindFirstChildWhichIsA("ProximityPrompt");
+							if prompt then
+								prompt.HoldDuration = 0;
+								if not prompt.Enabled then
+									prompt.Enabled = true;
+								end
+								task.spawn(function()
+									fireproximityprompt(prompt);
+								end);
+							end
+						end
+					end
+				end
+				task.wait(0.01);
+			end
+		end);
+	else
+		local cleaningJob = workspace:FindFirstChild("JobSystem") and workspace.JobSystem:FindFirstChild("CleaningJob4");
+		if cleaningJob then
+			for _, spot in pairs(cleaningJob:GetChildren()) do
+				if (spot.Name == "CleaningSpot") then
+					local prompt = spot:FindFirstChildWhichIsA("ProximityPrompt");
+					if prompt then
+						prompt.HoldDuration = 5.5;
+					end
+				end
+			end
+		end
+	end
+end);
+local autoChicken2 = false;
+createButton("AUTO CLEAN MODO'S", autoFarmGrid, function(state)
+	autoChicken2 = state;
+	if state then
+		task.spawn(function()
+			if (player.Character and player.Character:FindFirstChild("HumanoidRootPart")) then
+				player.Character.HumanoidRootPart.CFrame = CFrame.new(-171.276, 17.122, -79.654);
+				task.wait(0.5);
+				local tcs = game:GetService("TextChatService");
+				if (tcs.ChatVersion == Enum.ChatVersion.TextChatService) then
+					tcs.TextChannels.RBXGeneral:SendAsync("/applyjob");
+				else
+					game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer("/applyjob", "All");
+				end
+				task.wait(1);
+				player.Character.HumanoidRootPart.CFrame = CFrame.new(-186.963, 17.108, -67.045);
+				task.wait(0.5);
+			end
+			while autoChicken2 do
+				local cleaningJob = workspace:FindFirstChild("JobSystem") and workspace.JobSystem:FindFirstChild("CleaningJob3");
+				if cleaningJob then
+					for _, spot in pairs(cleaningJob:GetChildren()) do
+						if not autoChicken2 then
+							break;
+						end
+						if (spot.Name == "CleaningSpot") then
+							local prompt = spot:FindFirstChildWhichIsA("ProximityPrompt");
+							if prompt then
+								prompt.HoldDuration = 0;
+								if not prompt.Enabled then
+									prompt.Enabled = true;
+								end
+								task.spawn(function()
+									fireproximityprompt(prompt);
+								end);
+							end
+						end
+					end
+				end
+				task.wait(0.01);
+			end
+		end);
+	else
+		local cleaningJob = workspace:FindFirstChild("JobSystem") and workspace.JobSystem:FindFirstChild("CleaningJob3");
+		if cleaningJob then
+			for _, spot in pairs(cleaningJob:GetChildren()) do
+				if (spot.Name == "CleaningSpot") then
+					local prompt = spot:FindFirstChildWhichIsA("ProximityPrompt");
+					if prompt then
+						prompt.HoldDuration = 5.5;
+					end
+				end
+			end
+		end
+	end
+end);
+local flyJumpPower = 50;
+local flyJumpEnabled = false;
+local flyJumpConnection = nil;
+createButton("INF JUMP", playerGrid, function(state)
+	flyJumpEnabled = state;
+	if flyJumpEnabled then
+		flyJumpConnection = game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
+			if (not gpe and (input.KeyCode == Enum.KeyCode.Space)) then
+				if (flyJumpEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart")) then
+					local hrp = player.Character.HumanoidRootPart;
+					hrp.Velocity = Vector3.new(hrp.Velocity.X, flyJumpPower, hrp.Velocity.Z);
+					playSound(SOUNDS.Toggle, 0.2, 2);
+				end
+			end
+		end);
+	else
+		if flyJumpConnection then
+			flyJumpConnection:Disconnect();
+			flyJumpConnection = nil;
+		end
+		playSound(SOUNDS.Static, 0.5, 0.8);
+	end
+end);
+createButton("NOCLIP", playerGrid, function(state)
+	noclipEnabled = state;
+	if noclipEnabled then
+		noclipConnection = game:GetService("RunService").Stepped:Connect(function()
+			if (noclipEnabled and player.Character) then
+				for _, part in pairs(player.Character:GetDescendants()) do
+					if (part:IsA("BasePart") and part.CanCollide) then
+						part.CanCollide = false;
+					end
+				end
+			end
+		end);
+		playSound(SOUNDS.Toggle, 0.5, 1.5);
+	else
+		if noclipConnection then
+			noclipConnection:Disconnect();
+			noclipConnection = nil;
+		end
+		if player.Character then
+			for _, part in pairs(player.Character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = true;
+				end
+			end
+		end
+		playSound(SOUNDS.Static, 0.5, 0.8);
+	end
+end);
+local visualGrid = createCategory("VISUALS");
+local espMainBtn = createButton("SYSTEM ESP", visualGrid, function(state)
+	updateESPStatus(state);
+end);
+createButton("SHOW DISTANCE", visualGrid, function(state)
+	showDistance = state;
+end);
+createButton("SHOW HEALTH", visualGrid, function(state)
+	showHealth = state;
+end);
+local sizeBtn = createButton("FONT SIZE: " .. espTextSize, visualGrid, function()
+	if (espTextSize >= 20) then
+		espTextSize = 8;
+	else
+		espTextSize = espTextSize + 2;
+	end
+end);
+local bindBtn = createButton("BIND: " .. ESP_KEY.Name, visualGrid, function()
+	isBindingESP = true;
+end);
+local utilityGrid = createCategory("UTILITY");
+createButton("FULLBRIGHT", utilityGrid, function(state)
+	fullBrightEnabled = state;
+	if fullBrightEnabled then
+		game:GetService("Lighting").Ambient = Color3.fromRGB(255, 255, 255);
+		game:GetService("Lighting").OutdoorAmbient = Color3.fromRGB(255, 255, 255);
+		game:GetService("Lighting").Brightness = 2;
+	else
+		game:GetService("Lighting").Ambient = oldAmbient;
+		game:GetService("Lighting").OutdoorAmbient = oldOutdoorAmbient;
+		game:GetService("Lighting").Brightness = 1;
+	end
+end);
+createButton("ANTI-AFK", utilityGrid, function(state)
+	local connections = getconnections or get_signal_cons;
+	if connections then
+		for _, v in pairs(connections(player.Idled)) do
+			if state then
+				v:Disable();
+			else
+				v:Enable();
+			end
+		end
+	end
+	if state then
+		player.Idled:Connect(function()
+			game:GetService("VirtualUser"):CaptureController();
+			game:GetService("VirtualUser"):ClickButton2(Vector2.new());
+		end);
+	end
+end);
+createButton("REJOIN SERVER", utilityGrid, function()
+	local ts = game:GetService("TeleportService");
+	ts:TeleportToPlaceInstance(game.PlaceId, game.JobId, player);
+end);
+createButton("FPS BOOSTER", utilityGrid, function()
+	for _, v in pairs(game:GetDescendants()) do
+		if (v:IsA("BasePart") and not v:IsA("MeshPart")) then
+			v.Material = Enum.Material.SmoothPlastic;
+		elseif (v:IsA("Decal") or v:IsA("Texture")) then
+			v:Destroy();
+		end
+	end
+end);
+local aimbotBtn = createButton("AIMBOT HUB", utilityGrid, function()
+	playSound(SOUNDS.AimbotHub, 0.2, 2);
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/ZokaOnTop/005/refs/heads/main/005"))();
+end);
+aimbotBtn.TextColor3 = Color3.fromRGB(255, 0, 0);
+local stroke = aimbotBtn:FindFirstChildWhichIsA("UIStroke");
+if stroke then
+	stroke.Color = Color3.fromRGB(255, 0, 0);
+end
+local dragging, dragInput, dragStart, startPos;
+mainFrame.InputBegan:Connect(function(input)
+	if ((input.UserInputType == Enum.UserInputType.MouseButton1) or (input.UserInputType == Enum.UserInputType.Touch)) then
+		dragging = true;
+		dragStart = input.Position;
+		startPos = mainFrame.Position;
+		input.Changed:Connect(function()
+			if (input.UserInputState == Enum.UserInputState.End) then
+				dragging = false;
+			end
+		end);
+	end
+end);
+mainFrame.InputChanged:Connect(function(input)
+	if ((input.UserInputType == Enum.UserInputType.MouseMovement) or (input.UserInputType == Enum.UserInputType.Touch)) then
+		dragInput = input;
+	end
+end);
+UserInputService.InputChanged:Connect(function(input)
+	if ((input == dragInput) and dragging) then
+		local delta = input.Position - dragStart;
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y);
+	end
+end);
+function toggleUI()
+	if not isOpen then
+		isOpen = true;
+		playSound(SOUNDS.Toggle, 0.7, 1);
+		local targetPos = mainFrame.Position;
+		local absolutePos = mainFrame.AbsolutePosition;
+		local absoluteSize = mainFrame.AbsoluteSize;
+		fullScreenGlitch();
+		for i = 1, 5 do
+			task.spawn(function()
+				local pixel = Instance.new("Frame", screenGui);
+				pixel.BorderSizePixel = 0;
+				pixel.BackgroundColor3 = ((math.random() > 0.5) and Color3.fromRGB(0, 255, 100)) or Color3.fromRGB(255, 255, 255);
+				pixel.Size = UDim2.new(0, 0, 0, 0);
+				pixel.ZIndex = 10001;
+				local startX = absolutePos.X + (absoluteSize.X / 2) + math.random(-300, 300);
+				local startY = absolutePos.Y + (absoluteSize.Y / 2) + math.random(-300, 300);
+				pixel.Position = UDim2.new(0, startX, 0, startY);
+				pixel.BackgroundTransparency = 1;
+				local destX = absolutePos.X + math.random(0, absoluteSize.X);
+				local destY = absolutePos.Y + math.random(0, absoluteSize.Y);
+				local tween = TweenService:Create(pixel, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position=UDim2.new(0, destX, 0, destY),Size=UDim2.new(0, math.random(5, 25), 0, math.random(5, 25)),BackgroundTransparency=0.2,Rotation=math.random(-180, 180)});
+				tween:Play();
+				tween.Completed:Connect(function()
+					task.wait(0.05);
+					pixel:Destroy();
+				end);
+			end);
+			if ((i % 6) == 0) then
+				task.wait();
+			end
+		end
+		task.wait(0.2);
+		mainFrame.Visible = true;
+		fullScreenGlitch();
+		for i = 1, 8 do
+			mainFrame.Position = UDim2.new(targetPos.X.Scale, targetPos.X.Offset + math.random(-5, 5), targetPos.Y.Scale, targetPos.Y.Offset + math.random(-5, 5));
+			task.wait(0.01);
+		end
+		mainFrame.Position = targetPos;
+	else
+		isOpen = false;
+		playSound(SOUNDS.Static, 0.8, 0.8);
+		local absolutePos = mainFrame.AbsolutePosition;
+		local absoluteSize = mainFrame.AbsoluteSize;
+		mainFrame.Visible = false;
+		fullScreenGlitch();
+		for i = 1, 25 do
+			task.spawn(function()
+				local pixel = Instance.new("Frame", screenGui);
+				pixel.BorderSizePixel = 0;
+				pixel.BackgroundColor3 = ((math.random() > 0.5) and Color3.fromRGB(0, 255, 100)) or Color3.fromRGB(20, 20, 20);
+				pixel.Size = UDim2.new(0, math.random(10, 40), 0, math.random(10, 40));
+				pixel.Position = UDim2.new(0, absolutePos.X + math.random(0, absoluteSize.X), 0, absolutePos.Y + math.random(0, absoluteSize.Y));
+				pixel.ZIndex = 10001;
+				local drift = math.random(-150, 150);
+				local fall = math.random(200, 500);
+				local tween = TweenService:Create(pixel, TweenInfo.new(0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position=(pixel.Position + UDim2.new(0, drift, 0, fall)),Rotation=math.random(-180, 180),BackgroundTransparency=1,Size=UDim2.new(0, 0, 0, 0)});
+				tween:Play();
+				tween.Completed:Connect(function()
+					pixel:Destroy();
+				end);
+			end);
+			if ((i % 5) == 0) then
+				task.wait();
+			end
+		end
+	end
+end
+function startIntro()
+	task.wait(0.8);
+	toggleUI();
+end
+task.spawn(startIntro);
+local isToggling = false;
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if (isBindingESP and (input.UserInputType == Enum.UserInputType.Keyboard)) then
+		ESP_KEY = input.KeyCode;
+		isBindingESP = false;
+		playSound(SOUNDS.Toggle, 0.5, 1.5);
+		local visualGrid = container:FindFirstChild("VISUALS_Grid");
+		if visualGrid then
+			for _, child in pairs(visualGrid:GetChildren()) do
+				if (child:IsA("TextButton") and child.Name:find("BIND")) then
+					child.Text = "[ ] BIND: " .. ESP_KEY.Name;
+				end
+			end
+		end
+		return;
+	end
+	if not gpe then
+		if (input.KeyCode == ALT_TOGGLE) then
+			if isToggling then
+				return;
+			end
+			isToggling = true;
+			toggleUI();
+			task.wait(0.5);
+			isToggling = false;
+		elseif (input.KeyCode == ESP_KEY) then
+			if isToggling then
+				return;
+			end
+			isToggling = true;
+			updateESPStatus(not espEnabled);
+			task.wait(0.5);
+			isToggling = false;
+		end
+	end
+end);
